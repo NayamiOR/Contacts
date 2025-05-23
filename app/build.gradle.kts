@@ -41,6 +41,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.room.runtime)  // Room Lib for SQLite database
+    implementation("androidx.compose.material:material:1.8.2")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
