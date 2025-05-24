@@ -1,6 +1,9 @@
 package com.example.contacts.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -25,19 +28,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.room.Room
+import com.example.contacts.Contact
+import com.example.contacts.ContactDatabase
+import com.example.contacts.ContactDetails
 import com.example.contacts.ui.components.CollapsibleContactCard
 import com.example.contacts.ui.components.CollapsibleDetailCard
+import com.google.gson.Gson
+import kotlinx.coroutines.launch
 
 @SuppressLint("MutableCollectionMutableState")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddContactScreen(
     modifier: Modifier = Modifier,
+    context: Context,
     onNavigateBack: () -> Unit = {},
-    onSaveContact: (String, String, Int?, Int?, Int?, String?, String?, String?) -> Unit = { _, _, _, _, _, _, _, _ -> }
 ) {
     // 基本状态变量
     var name by remember { mutableStateOf("") }
@@ -50,11 +60,15 @@ fun AddContactScreen(
 
     // 详细信息状态变量
     var nicknames by remember { mutableStateOf(mutableStateListOf<String>()) }
-    var contacts by remember { mutableStateOf(mutableStateMapOf<String, String>(
-        "微信" to "",
-        "QQ" to "",
-        "手机号" to ""
-    )) }
+    var contacts by remember {
+        mutableStateOf(
+            mutableStateMapOf<String, String>(
+                "微信" to "",
+                "QQ" to "",
+                "手机号" to ""
+            )
+        )
+    }
     var hobbies by remember { mutableStateOf(mutableStateListOf<String>()) }
     var dislikes by remember { mutableStateOf(mutableStateListOf<String>()) }
     var traits by remember { mutableStateOf(mutableStateListOf<String>()) }
@@ -73,6 +87,16 @@ fun AddContactScreen(
     var isAddressesExpanded by remember { mutableStateOf(false) }
     var isNotesExpanded by remember { mutableStateOf(false) }
     var isCustomFieldsExpanded by remember { mutableStateOf(false) }
+
+    // 添加协程作用域和数据库
+    val scope = rememberCoroutineScope()
+    val database = remember {
+        Room.databaseBuilder(
+            context.applicationContext,
+            ContactDatabase::class.java,
+            "Contacts.db"
+        ).build()
+    }
 
     Scaffold(
         topBar = {
@@ -95,18 +119,47 @@ fun AddContactScreen(
                 actions = {
                     IconButton(
                         onClick = {
-                            if (name.isNotBlank() && source.isNotBlank()) {
-                                // TODO: 构建包含详细信息的JSON字符串
-                                //onSaveContact(
-                                //    name,
-                                //    source,
-                                //    birthYear.toIntOrNull(),
-                                //    birthMonth.toIntOrNull(),
-                                //    birthDay.toIntOrNull(),
-                                //    realName.ifBlank { null },
-                                //    phone.ifBlank { null },
-                                //    null // 这里应该传入构建好的详细信息JSON
-                                //)
+                            if (name.isBlank() || source.isBlank()) {
+                                Toast.makeText(context, "姓名和来源不能为空", Toast.LENGTH_SHORT).show()
+                                return@IconButton
+                            }
+                            
+                            scope.launch {
+                                try {
+                                    val details = ContactDetails(
+                                        nicknames = nicknames.filter { it.isNotBlank() },
+                                        contacts = contacts.filterValues { it.isNotBlank() },
+                                        hobbies = hobbies.filter { it.isNotBlank() },
+                                        dislikes = dislikes.filter { it.isNotBlank() },
+                                        traits = traits.filter { it.isNotBlank() },
+                                        addresses = addresses.filter { it.isNotBlank() },
+                                        notes = notes.filter { it.isNotBlank() },
+                                        custom = customFields.mapValues { it.value.filter { item -> item.isNotBlank() } }
+                                    )
+
+                                    val detailsJson = Gson().toJson(details)
+
+                                    // 保存联系人
+                                    val contact = Contact(
+                                        name = name,
+                                        source = source,
+                                        birthYear = birthYear.toIntOrNull(),
+                                        birthMonth = birthMonth.toIntOrNull(),
+                                        birthDay = birthDay.toIntOrNull(),
+                                        realName = realName.takeIf { it.isNotBlank() },
+                                        phone = contacts["手机号"]?.takeIf { it.isNotBlank() },
+                                        details = detailsJson
+                                    )
+
+                                    database.contactDao().insertContact(contact)
+
+                                    Log.d("AddContactScreen", "联系人已保存: $contact")
+                                    onNavigateBack()
+                                    Toast.makeText(context, "联系人已保存", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    Toast.makeText(context, "保存联系人失败: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
                     ) {
@@ -171,7 +224,7 @@ fun AddContactScreen(
                             // AsyncImage 或其他图片加载组件
                         }
                     }
-                    
+
                     // 更换头像按钮
                     OutlinedButton(
                         onClick = {
@@ -218,7 +271,7 @@ fun AddContactScreen(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
-                    
+
                     // 可折叠内容
                     AnimatedVisibility(
                         visible = isBasicInfoExpanded,
@@ -239,7 +292,7 @@ fun AddContactScreen(
                                     { Text("姓名不能为空") }
                                 } else null
                             )
-                            
+
                             OutlinedTextField(
                                 value = source,
                                 onValueChange = { source = it },
@@ -290,7 +343,7 @@ fun AddContactScreen(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
-                    
+
                     AnimatedVisibility(
                         visible = isBirthdayExpanded,
                         enter = expandVertically(),
@@ -304,7 +357,7 @@ fun AddContactScreen(
                         ) {
                             OutlinedTextField(
                                 value = birthYear,
-                                onValueChange = { 
+                                onValueChange = {
                                     if (it.isEmpty() || (it.toIntOrNull() != null && it.length <= 4)) {
                                         birthYear = it
                                     }
@@ -314,10 +367,10 @@ fun AddContactScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 placeholder = { Text("1990") }
                             )
-                            
+
                             OutlinedTextField(
                                 value = birthMonth,
-                                onValueChange = { 
+                                onValueChange = {
                                     val num = it.toIntOrNull()
                                     if (it.isEmpty() || (num != null && num in 1..12)) {
                                         birthMonth = it
@@ -328,10 +381,10 @@ fun AddContactScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 placeholder = { Text("1-12") }
                             )
-                            
+
                             OutlinedTextField(
                                 value = birthDay,
-                                onValueChange = { 
+                                onValueChange = {
                                     val num = it.toIntOrNull()
                                     if (it.isEmpty() || (num != null && num in 1..31)) {
                                         birthDay = it
@@ -436,6 +489,9 @@ fun AddContactScreen(
 @Preview(showBackground = true)
 @Composable
 fun AddContactScreenPreview() {
-    AddContactScreen()
+    AddContactScreen(
+        modifier = Modifier,
+        context = LocalContext.current,
+    )
 }
 
