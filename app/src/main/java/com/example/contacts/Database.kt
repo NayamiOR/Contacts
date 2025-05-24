@@ -3,35 +3,42 @@ package com.example.contacts
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
+import androidx.room.Delete
 import androidx.room.Entity
-import androidx.room.ForeignKey
-import androidx.room.Index
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
+import androidx.room.Query
+import androidx.room.RoomDatabase
+import androidx.room.Update
+import com.google.gson.Gson
 import java.sql.Date
 
 @Database(entities = [Contact::class], version = 1, exportSchema = false)
-abstract class ContactDatabase {
+abstract class ContactDatabase: RoomDatabase() {
     abstract fun contactDao(): ContactDao
 }
 
-@Entity
+@Entity(tableName = "contacts")
 data class Contact(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
     @ColumnInfo(name = "name")
-    @PrimaryKey val name: String,
+    val name: String,
     @ColumnInfo(name = "source")
-    @PrimaryKey val source: String,
+    val source: String,
     @ColumnInfo(name = "birth_year")
     val birthYear: Int?,
     @ColumnInfo(name = "birth_month")
     val birthMonth: Int?,
     @ColumnInfo(name = "birth_day")
     val birthDay: Int?,
-    @ColumnInfo(name = "birth_date")
+    @ColumnInfo(name = "real_name")
     val realName: String?,
     @ColumnInfo(name = "phone")
     val phone: String?,
     @ColumnInfo(name = "details")
-    val details: String? // 用 JSON 存储“细节字段”
+    val details: String? // 用 JSON 存储"细节字段"
 )
 
 data class ContactDetails(
@@ -51,21 +58,38 @@ data class ContactDetails(
 @Dao
 interface ContactDao {
     // Insert a new contact
-    fun insertContact(contact: Contact)
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertContact(contact: Contact): Long
 
     // Update an existing contact
-    fun updateContact(contact: Contact)
+    @Update
+    suspend fun updateContact(contact: Contact)
 
     // Delete a contact
-    fun deleteContact(contact: Contact)
+    @Delete
+    suspend fun deleteContact(contact: Contact)
 
     // Get all contacts
-    fun getAllContacts(): List<Contact>
+    @Query("SELECT * FROM contacts ORDER BY name ASC")
+    suspend fun getAllContacts(): List<Contact>
 
-    // Get a contact by name
-    fun getContactByName(name: String): Contact?
+    // Get a contact by id
+    @Query("SELECT * FROM contacts WHERE id = :id")
+    suspend fun getContactById(id: Long): Contact?
+
+    // Get contacts by name
+    @Query("SELECT * FROM contacts WHERE name LIKE '%' || :name || '%'")
+    suspend fun getContactsByName(name: String): List<Contact>
 }
 
-fun ParseDetails(details: String): ContactDetails {
-    TODO()
+fun parseDetails(details: String?): ContactDetails? {
+    return if (details.isNullOrBlank()) {
+        null
+    } else {
+        try {
+            Gson().fromJson(details, ContactDetails::class.java)
+        } catch (e: Exception) {
+            null
+        }
+    }
 }
