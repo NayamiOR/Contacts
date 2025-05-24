@@ -12,10 +12,9 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Update
 import com.google.gson.Gson
-import java.sql.Date
 
 @Database(entities = [Contact::class], version = 1, exportSchema = false)
-abstract class ContactDatabase: RoomDatabase() {
+abstract class ContactDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
 }
 
