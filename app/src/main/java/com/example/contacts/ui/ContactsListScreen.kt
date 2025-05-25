@@ -1,8 +1,8 @@
 package com.example.contacts.ui
 
-import android.R
-import android.R.attr.contentDescription
 import android.content.Context
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -46,6 +46,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -81,6 +83,12 @@ fun ContactsListScreen(
     var isLoading by remember { mutableStateOf(true) }
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedContacts by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    
+    // 删除确认对话框状态
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
+    var contactToDelete by remember { mutableStateOf<Contact?>(null) }
+    
     val scope = rememberCoroutineScope()
 
     // 初始化数据库
@@ -118,9 +126,12 @@ fun ContactsListScreen(
     }
 
     // 退出选择模式
-    fun exitSelectionMode() {
+    fun exitSelectionMode(showToast: Boolean = false) {
         isSelectionMode = false
         selectedContacts = emptySet()
+        if (showToast) {
+            Toast.makeText(context, "已退出选择模式", Toast.LENGTH_SHORT).show()
+        }
     }
 
     // 全选/取消全选
@@ -132,8 +143,13 @@ fun ContactsListScreen(
         }
     }
 
-    // 批量删除
-    fun deleteSelectedContacts() {
+    // 显示批量删除确认对话框
+    fun showBatchDeleteConfirmation() {
+        showBatchDeleteDialog = true
+    }
+
+    // 执行批量删除
+    fun executeBatchDelete() {
         scope.launch {
             selectedContacts.forEach { contactId ->
                 contacts.find { it.id == contactId }?.let { contact ->
@@ -142,6 +158,57 @@ fun ContactsListScreen(
             }
             contacts = database.contactDao().getAllContacts()
             exitSelectionMode()
+            Toast.makeText(context, "已删除 ${selectedContacts.size} 个联系人", Toast.LENGTH_SHORT).show()
+        }
+        showBatchDeleteDialog = false
+    }
+
+    // 显示单个删除确认对话框
+    fun showDeleteConfirmation(contact: Contact) {
+        contactToDelete = contact
+        showDeleteDialog = true
+    }
+
+    // 执行单个删除
+    fun executeSingleDelete() {
+        contactToDelete?.let { contact ->
+            scope.launch {
+                database.contactDao().deleteContact(contact)
+                contacts = database.contactDao().getAllContacts()
+                Toast.makeText(context, "已删除联系人 ${contact.name}", Toast.LENGTH_SHORT).show()
+                onDeleteContactClick(contact.id.toString())
+            }
+        }
+        showDeleteDialog = false
+        contactToDelete = null
+    }
+
+    // 批量分享
+    fun shareSelectedContacts() {
+        val selectedContactsList = contacts.filter { selectedContacts.contains(it.id) }
+        if (selectedContactsList.isNotEmpty()) {
+            val shareText = buildString {
+                appendLine("分享的联系人信息:")
+                appendLine()
+                selectedContactsList.forEach { contact ->
+                    appendLine("姓名: ${contact.name}")
+                    appendLine("来源: ${contact.source}")
+                    contact.phone?.takeIf { it.isNotBlank() }?.let {
+                        appendLine("手机号: $it")
+                    }
+                    appendLine("---")
+                }
+            }
+
+            val shareIntent = android.content.Intent().apply {
+                action = android.content.Intent.ACTION_SEND
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "联系人信息")
+            }
+
+            context.startActivity(android.content.Intent.createChooser(shareIntent, "分享联系人"))
+            exitSelectionMode() // 分享后退出选择模式
         }
     }
 
@@ -163,15 +230,15 @@ fun ContactsListScreen(
                     if (isSelectionMode) {
                         IconButton(onClick = { toggleSelectAll() }) {
                             Icon(
-                                painter=painterResource(
+                                painter = painterResource(
                                     id = if (selectedContacts.size == filteredContacts.size)
                                         com.example.contacts.R.drawable.baseline_check_box_24
                                     else
                                         com.example.contacts.R.drawable.baseline_check_box_outline_blank_24
                                 ),
                                 contentDescription = if (selectedContacts.size == filteredContacts.size)
-                                    "取消全选" 
-                                else 
+                                    "取消全选"
+                                else
                                     "全选",
                                 tint = MaterialTheme.colorScheme.onPrimary
                             )
@@ -180,7 +247,7 @@ fun ContactsListScreen(
                 },
                 actions = {
                     if (isSelectionMode) {
-                        IconButton(onClick = { exitSelectionMode() }) {
+                        IconButton(onClick = { exitSelectionMode(showToast = false) }) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "取消选择",
@@ -206,6 +273,11 @@ fun ContactsListScreen(
             }
         }
     ) { innerPadding ->
+        // 处理返回键：在选择模式下先退出选择模式，否则正常返回
+        BackHandler(enabled = isSelectionMode) {
+            exitSelectionMode(showToast = true)
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -223,7 +295,13 @@ fun ContactsListScreen(
                 ) {
                     OutlinedTextField(
                         value = searchQuery,
-                        onValueChange = { searchQuery = it },
+                        onValueChange = {
+                            searchQuery = it
+                            // 搜索时如果在选择模式，退出选择模式
+                            if (isSelectionMode) {
+                                exitSelectionMode()
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
@@ -310,11 +388,7 @@ fun ContactsListScreen(
                                     },
                                     onEditClick = { onEditContactClick(contact.id.toString()) },
                                     onDeleteClick = {
-                                        scope.launch {
-                                            database.contactDao().deleteContact(contact)
-                                            contacts = database.contactDao().getAllContacts()
-                                        }
-                                        onDeleteContactClick(contact.id.toString())
+                                        showDeleteConfirmation(contact)
                                     }
                                 )
                             }
@@ -337,9 +411,7 @@ fun ContactsListScreen(
                     ) {
                         // 分享按钮
                         IconButton(
-                            onClick = {
-                                // TODO: 实现批量分享功能
-                            }
+                            onClick = { shareSelectedContacts() }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Share,
@@ -350,7 +422,7 @@ fun ContactsListScreen(
 
                         // 删除按钮
                         IconButton(
-                            onClick = { deleteSelectedContacts() }
+                            onClick = { showBatchDeleteConfirmation() }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
@@ -361,6 +433,48 @@ fun ContactsListScreen(
                     }
                 }
             }
+        }
+
+        // 删除确认对话框
+        if (showDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = { Text("删除联系人") },
+                text = { Text("确定要删除联系人 \"${contactToDelete?.name}\" 吗？此操作无法撤销。") },
+                confirmButton = {
+                    TextButton(
+                        onClick = { executeSingleDelete() }
+                    ) {
+                        Text("删除", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteDialog = false }) {
+                        Text("取消")
+                    }
+                }
+            )
+        }
+
+        // 批量删除确认对话框
+        if (showBatchDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = { showBatchDeleteDialog = false },
+                title = { Text("批量删除联系人") },
+                text = { Text("确定要删除选中的 ${selectedContacts.size} 个联系人吗？此操作无法撤销。") },
+                confirmButton = {
+                    TextButton(
+                        onClick = { executeBatchDelete() }
+                    ) {
+                        Text("删除", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBatchDeleteDialog = false }) {
+                        Text("取消")
+                    }
+                }
+            )
         }
     }
 }
