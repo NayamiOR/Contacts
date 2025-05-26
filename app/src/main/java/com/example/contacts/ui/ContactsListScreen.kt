@@ -3,15 +3,24 @@ package com.example.contacts.ui
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,24 +28,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -45,9 +53,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,16 +65,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.room.Room
 import com.example.contacts.Contact
 import com.example.contacts.ContactDatabase
+import com.example.contacts.PinyinUtils
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,6 +102,9 @@ fun ContactsListScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var contactToDelete by remember { mutableStateOf<Contact?>(null) }
+
+    // 字母索引相关状态
+    val listState = rememberLazyListState()
     
     val scope = rememberCoroutineScope()
 
@@ -104,7 +121,11 @@ fun ContactsListScreen(
     LaunchedEffect(Unit) {
         scope.launch {
             try {
-                contacts = database.contactDao().getAllContacts()
+                val loadedContacts = database.contactDao().getAllContacts()
+                // 应用拼音排序
+                contacts = loadedContacts.sortedWith { contact1, contact2 ->
+                    PinyinUtils.compareStrings(contact1.name, contact2.name)
+                }
                 isLoading = false
             } catch (e: Exception) {
                 isLoading = false
@@ -112,9 +133,9 @@ fun ContactsListScreen(
         }
     }
 
-    // 搜索过滤
+    // 搜索过滤和排序
     val filteredContacts = remember(contacts, searchQuery) {
-        if (searchQuery.isBlank()) {
+        val filtered = if (searchQuery.isBlank()) {
             contacts
         } else {
             contacts.filter { contact ->
@@ -123,6 +144,42 @@ fun ContactsListScreen(
                         contact.realName?.contains(searchQuery, ignoreCase = true) == true
             }
         }
+        // 使用拼音排序
+        filtered.sortedWith { contact1, contact2 ->
+            PinyinUtils.compareStrings(contact1.name, contact2.name)
+        }
+    }
+
+    // 按首字母分组（使用拼音首字母）
+    val groupedContacts = remember(filteredContacts) {
+        filteredContacts.groupBy { contact ->
+            PinyinUtils.getFirstLetter(contact.name)
+        }.toSortedMap()
+    }
+
+    // 获取所有字母索引
+    val alphabetIndex = remember(groupedContacts) {
+        val letters = mutableListOf<Char>()
+        // 如果有非字母开头的联系人，先添加#到最上方
+        if (groupedContacts.containsKey('#')) {
+            letters.add('#')
+        }
+        // 添加A-Z
+        for (c in 'A'..'Z') {
+            letters.add(c)
+        }
+        letters
+    }
+
+    // 计算每个字母对应的列表项索引
+    val letterToIndex = remember(groupedContacts) {
+        val map = mutableMapOf<Char, Int>()
+        var currentIndex = 0
+        groupedContacts.forEach { (letter, contacts) ->
+            map[letter] = currentIndex
+            currentIndex += contacts.size + 1 // +1 for header
+        }
+        map
     }
 
     // 退出选择模式
@@ -156,9 +213,14 @@ fun ContactsListScreen(
                     database.contactDao().deleteContact(contact)
                 }
             }
-            contacts = database.contactDao().getAllContacts()
+            val loadedContacts = database.contactDao().getAllContacts()
+            // 应用拼音排序
+            contacts = loadedContacts.sortedWith { contact1, contact2 ->
+                PinyinUtils.compareStrings(contact1.name, contact2.name)
+            }
             exitSelectionMode()
-            Toast.makeText(context, "已删除 ${selectedContacts.size} 个联系人", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "已删除 ${selectedContacts.size} 个联系人", Toast.LENGTH_SHORT)
+                .show()
         }
         showBatchDeleteDialog = false
     }
@@ -174,7 +236,11 @@ fun ContactsListScreen(
         contactToDelete?.let { contact ->
             scope.launch {
                 database.contactDao().deleteContact(contact)
-                contacts = database.contactDao().getAllContacts()
+                val loadedContacts = database.contactDao().getAllContacts()
+                // 应用拼音排序
+                contacts = loadedContacts.sortedWith { contact1, contact2 ->
+                    PinyinUtils.compareStrings(contact1.name, contact2.name)
+                }
                 Toast.makeText(context, "已删除联系人 ${contact.name}", Toast.LENGTH_SHORT).show()
                 onDeleteContactClick(contact.id.toString())
             }
@@ -254,28 +320,23 @@ fun ContactsListScreen(
                                 tint = MaterialTheme.colorScheme.onPrimary
                             )
                         }
+                    } else {
+                        // 添加联系人按钮
+                        IconButton(onClick = onAddContactClick) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "添加联系人",
+                                tint = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            if (!isSelectionMode) {
-                FloatingActionButton(
-                    onClick = onAddContactClick,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "添加联系人"
-                    )
-                }
-            }
         }
     ) { innerPadding ->
         // 处理返回键：在选择模式下先退出选择模式，否则正常返回
         BackHandler(enabled = isSelectionMode) {
-            exitSelectionMode(showToast = true)
+            exitSelectionMode(showToast = false)
         }
 
         Box(
@@ -358,12 +419,29 @@ fun ContactsListScreen(
                     }
 
                     else -> {
+                        Box(modifier = Modifier.fillMaxSize()) {
                         LazyColumn(
+                                state = listState,
                             modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(filteredContacts) { contact ->
+                                contentPadding = PaddingValues(
+                                    start = 16.dp,
+                                    end = 40.dp, // 为右侧字母索引条留出更多空间
+                                    top = 8.dp,
+                                    bottom = 8.dp
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                groupedContacts.forEach { (letter, contactsInGroup) ->
+                                    // 字母分组标题
+                                    item(key = "header_$letter") {
+                                        SectionHeader(letter = letter)
+                                    }
+
+                                    // 该字母下的联系人
+                                    items(
+                                        items = contactsInGroup,
+                                        key = { contact -> contact.id }
+                                    ) { contact ->
                                 ContactItem(
                                     contact = contact,
                                     isSelectionMode = isSelectionMode,
@@ -389,6 +467,24 @@ fun ContactsListScreen(
                                     onEditClick = { onEditContactClick(contact.id.toString()) },
                                     onDeleteClick = {
                                         showDeleteConfirmation(contact)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 字母索引条
+                            if (searchQuery.isBlank() && groupedContacts.isNotEmpty()) {
+                                AlphabetIndexBar(
+                                    modifier = Modifier.align(Alignment.CenterEnd),
+                                    alphabetIndex = alphabetIndex,
+                                    onLetterSelected = { letter ->
+                                        letterToIndex[letter]?.let { index ->
+                                            scope.launch {
+                                                // 使用scrollToItem获得更快的响应
+                                                listState.scrollToItem(index)
+                                            }
+                                        }
                                     }
                                 )
                             }
@@ -571,36 +667,161 @@ fun ContactItem(
                     )
                 }
             }
+        }
+    }
+}
 
-            // 更多操作按钮（非选择模式时显示）
-            if (!isSelectionMode) {
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "更多操作"
-                        )
-                    }
+// 分组标题组件
+@Composable
+fun SectionHeader(letter: Char) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp, horizontal = 4.dp)
+    ) {
+        Text(
+            text = letter.toString(),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}
 
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("编辑") },
-                            onClick = {
-                                showMenu = false
-                                onEditClick()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("删除") },
-                            onClick = {
-                                showMenu = false
-                                onDeleteClick()
-                            }
-                        )
+// 字母索引条组件
+@Composable
+fun AlphabetIndexBar(
+    modifier: Modifier = Modifier,
+    alphabetIndex: List<Char>,
+    onLetterSelected: (Char) -> Unit
+) {
+    var isDragging by remember { mutableStateOf(false) }
+    var currentSelectedLetter by remember { mutableStateOf<Char?>(null) }
+    val hapticFeedback = LocalHapticFeedback.current
+
+    Box(
+        modifier = modifier.width(80.dp) // 增加整体宽度以容纳气泡
+    ) {
+        // 字母栏固定在右侧
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(32.dp)
+                .align(Alignment.CenterEnd) // 固定在右侧
+                .padding(end = 8.dp)
+                .pointerInput(alphabetIndex) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            isDragging = true
+                            // 计算起始位置对应的字母
+                            val y = offset.y
+                            val totalHeight = size.height.toFloat()
+                            val letterIndex = ((y / totalHeight) * alphabetIndex.size).roundToInt()
+                                .coerceIn(0, alphabetIndex.size - 1)
+                            val selectedLetter = alphabetIndex[letterIndex]
+                            currentSelectedLetter = selectedLetter
+                            // 添加触觉反馈
+                            hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onLetterSelected(selectedLetter)
+                        },
+                        onDragEnd = {
+                            isDragging = false
+                            currentSelectedLetter = null
+                        }
+                    ) { change, _ ->
+                        // 拖动过程中持续更新选中的字母
+                        val y = change.position.y.coerceIn(0f, size.height.toFloat())
+                        val totalHeight = size.height.toFloat()
+                        val letterIndex = ((y / totalHeight) * alphabetIndex.size).roundToInt()
+                            .coerceIn(0, alphabetIndex.size - 1)
+                        val selectedLetter = alphabetIndex[letterIndex]
+
+                        // 只有当选中的字母发生变化时才触发回调
+                        if (selectedLetter != currentSelectedLetter) {
+                            currentSelectedLetter = selectedLetter
+                            // 添加触觉反馈
+                            hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                            onLetterSelected(selectedLetter)
+                        }
                     }
+                }
+                .pointerInput(alphabetIndex) {
+                    // 处理点击事件
+                    detectTapGestures { offset ->
+                        val y = offset.y
+                        val totalHeight = size.height.toFloat()
+                        val letterIndex = ((y / totalHeight) * alphabetIndex.size).roundToInt()
+                            .coerceIn(0, alphabetIndex.size - 1)
+                        onLetterSelected(alphabetIndex[letterIndex])
+                    }
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceEvenly
+        ) {
+            alphabetIndex.forEach { letter ->
+                val isSelected = isDragging && currentSelectedLetter == letter
+
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .background(
+                            color = if (isSelected)
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                            else
+                                Color.Transparent,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = letter.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = if (isSelected) 12.sp else 10.sp,
+                        color = if (isSelected)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+
+        // 浮动字母提示 - 显示在左侧
+        AnimatedVisibility(
+            visible = isDragging && currentSelectedLetter != null,
+            enter = fadeIn(animationSpec = tween(100)) + scaleIn(
+                animationSpec = tween(100),
+                initialScale = 0.8f
+            ),
+            exit = fadeOut(animationSpec = tween(100)) + scaleOut(
+                animationSpec = tween(100),
+                targetScale = 0.8f
+            ),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 8.dp) // 与左边缘的距离
+        ) {
+            Card(
+                modifier = Modifier.size(40.dp), // 进一步缩小气泡尺寸
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                ),
+                shape = RoundedCornerShape(30)// 使用圆形气泡
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = currentSelectedLetter?.toString() ?: "",
+                        style = MaterialTheme.typography.titleMedium, // 调整字体大小
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }

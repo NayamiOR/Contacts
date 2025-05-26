@@ -69,7 +69,7 @@ interface ContactDao {
     suspend fun deleteContact(contact: Contact)
 
     // Get all contacts
-    @Query("SELECT * FROM contacts ORDER BY name ASC")
+    @Query("SELECT * FROM contacts")
     suspend fun getAllContacts(): List<Contact>
 
     // Get a contact by id
