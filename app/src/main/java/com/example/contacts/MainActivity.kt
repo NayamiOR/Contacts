@@ -16,6 +16,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.contacts.ui.AddContactScreen
 import com.example.contacts.ui.ContactEditScreen
 import com.example.contacts.ui.ContactInfoScreen
@@ -26,6 +29,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        
         setContent {
             ContactsTheme {
                 Surface(
@@ -46,6 +50,16 @@ fun ContactsApp() {
     var previousScreen by remember { mutableStateOf<String?>(null) }
     var backPressedTime by remember { mutableStateOf(0L) }
     val context = LocalContext.current
+
+    // 初始化数据库（带迁移支持）
+    val database = remember {
+        Room.databaseBuilder(
+            context.applicationContext,
+            ContactDatabase::class.java,
+            "Contacts.db"
+        )
+        .build()
+    }
 
     // 处理返回键逻辑
     BackHandler {
@@ -76,6 +90,7 @@ fun ContactsApp() {
         "contacts_list" -> {
             ContactsListScreen(
                 context = context,
+                database = database,
                 onContactClick = { contactId ->
                     selectedContactId = contactId
                     previousScreen = "contacts_list"
@@ -100,6 +115,7 @@ fun ContactsApp() {
         "add_contact" -> {
             AddContactScreen(
                 context = context,
+                database = database,
                 onNavigateBack = {
                     currentScreen = previousScreen ?: "contacts_list"
                     previousScreen = null
@@ -112,6 +128,7 @@ fun ContactsApp() {
                 ContactInfoScreen(
                     contactId = contactId,
                     context = context,
+                    database = database,
                     onNavigateBack = {
                         currentScreen = previousScreen ?: "contacts_list"
                         previousScreen = null
@@ -140,6 +157,7 @@ fun ContactsApp() {
                 ContactEditScreen(
                     contactId = contactId,
                     context = context,
+                    database = database,
                     onNavigateBack = {
                         // 编辑页面返回到之前的页面（通常是详情页面或列表页面）
                         currentScreen = previousScreen ?: "contacts_list"

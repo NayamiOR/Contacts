@@ -73,7 +73,8 @@ fun ContactInfoScreen(
     onNavigateBack: () -> Unit = {},
     onEditContact: (String) -> Unit = {},
     onDeleteContact: () -> Unit = {},
-    context: Context = LocalContext.current
+    context: Context = LocalContext.current,
+    database: ContactDatabase? = null
 ) {
     var contact by remember { mutableStateOf<Contact?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -82,7 +83,7 @@ fun ContactInfoScreen(
     val scope = rememberCoroutineScope()
 
     // 初始化数据库
-    val database = remember {
+    val databaseInstance = database ?: remember {
         Room.databaseBuilder(
             context.applicationContext,
             ContactDatabase::class.java,
@@ -94,7 +95,7 @@ fun ContactInfoScreen(
     LaunchedEffect(contactId) {
         scope.launch {
             try {
-                contact = database.contactDao().getContactById(contactId.toLong())
+                contact = databaseInstance.contactDao().getContactById(contactId.toLong())
                 isLoading = false
             } catch (e: Exception) {
                 isLoading = false
@@ -114,7 +115,7 @@ fun ContactInfoScreen(
                     onClick = {
                         scope.launch {
                             contact?.let {
-                                database.contactDao().deleteContact(it)
+                                databaseInstance.contactDao().deleteContact(it)
                                 Toast.makeText(context, "联系人已删除", Toast.LENGTH_SHORT).show()
                                 onNavigateBack()
                             }

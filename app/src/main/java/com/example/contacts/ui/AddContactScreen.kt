@@ -34,7 +34,10 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +47,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -63,6 +67,7 @@ import androidx.room.Room
 import com.example.contacts.Contact
 import com.example.contacts.ContactDatabase
 import com.example.contacts.ContactDetails
+import com.example.contacts.ContactGroup
 import com.example.contacts.ui.components.CollapsibleContactCard
 import com.example.contacts.ui.components.CollapsibleDetailCard
 import com.google.gson.Gson
@@ -74,6 +79,7 @@ import kotlinx.coroutines.launch
 fun AddContactScreen(
     modifier: Modifier = Modifier,
     context: Context,
+    database: ContactDatabase? = null,
     onNavigateBack: () -> Unit = {},
 ) {
     // 基本状态变量
@@ -103,6 +109,11 @@ fun AddContactScreen(
     var notes by remember { mutableStateOf(mutableStateListOf<String>()) }
     var customFields by remember { mutableStateOf(mutableStateMapOf<String, MutableList<String>>()) }
 
+    // 分组相关状态
+    var selectedGroupId by remember { mutableStateOf<Long?>(null) }
+    var groups by remember { mutableStateOf<List<ContactGroup>>(emptyList()) }
+    var showGroupSelector by remember { mutableStateOf(false) }
+
     // 折叠状态
     var isBasicInfoExpanded by remember { mutableStateOf(true) }
     var isBirthdayExpanded by remember { mutableStateOf(false) }
@@ -117,12 +128,24 @@ fun AddContactScreen(
 
     // 添加协程作用域和数据库
     val scope = rememberCoroutineScope()
-    val database = remember {
+    val databaseInstance = database ?: remember {
         Room.databaseBuilder(
             context.applicationContext,
             ContactDatabase::class.java,
             "Contacts.db"
         ).build()
+    }
+
+    // 加载分组数据
+    LaunchedEffect(Unit) {
+        scope.launch {
+            try {
+                val loadedGroups = databaseInstance.groupDao().getAllGroups()
+                groups = loadedGroups
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     Scaffold(
@@ -176,10 +199,11 @@ fun AddContactScreen(
                                         birthDay = birthDay.toIntOrNull(),
                                         realName = realName.takeIf { it.isNotBlank() },
                                         phone = contacts["手机号"]?.takeIf { it.isNotBlank() },
+                                        groupId = selectedGroupId,
                                         details = detailsJson
                                     )
 
-                                    database.contactDao().insertContact(contact)
+                                    databaseInstance.contactDao().insertContact(contact)
 
                                     Log.d("AddContactScreen", "联系人已保存: $contact")
                                     onNavigateBack()
@@ -344,6 +368,29 @@ fun AddContactScreen(
                                 label = { Text("真实姓名") },
                                 modifier = Modifier.fillMaxWidth(),
                                 placeholder = { Text("如果与显示姓名不同") }
+                            )
+
+                            // 分组选择
+                            GroupSelector(
+                                groups = groups,
+                                selectedGroupId = selectedGroupId,
+                                onGroupSelected = { groupId ->
+                                    selectedGroupId = groupId
+                                },
+                                onGroupAdded = { newGroup ->
+                                    // 添加新分组到数据库
+                                    scope.launch {
+                                        try {
+                                            val groupId = databaseInstance.groupDao().insertGroup(newGroup)
+                                            val insertedGroup = newGroup.copy(id = groupId)
+                                            groups = groups + insertedGroup
+                                            selectedGroupId = groupId
+                                            Toast.makeText(context, "分组 \"${newGroup.name}\" 已创建", Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "创建分组失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
                             )
                         }
                     }
@@ -526,5 +573,116 @@ fun AddContactScreenPreview() {
         modifier = Modifier,
         context = LocalContext.current,
     )
+}
+
+// 分组选择器组件
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GroupSelector(
+    groups: List<ContactGroup>,
+    selectedGroupId: Long?,
+    onGroupSelected: (Long?) -> Unit,
+    onGroupAdded: ((ContactGroup) -> Unit)? = null
+) {
+    var expanded by remember { mutableStateOf(false) }
+    
+    val selectedGroup = groups.find { it.id == selectedGroupId }
+    
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = selectedGroup?.name ?: "未分组",
+            onValueChange = { },
+            readOnly = true,
+            label = { Text("分组") },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor()
+        )
+        
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            // 新增分组选项
+            DropdownMenuItem(
+                text = { 
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "新增分组",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "新增分组",
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                },
+                onClick = {
+                    expanded = false
+                    onGroupAdded?.invoke(ContactGroup(name = "新分组"))
+                }
+            )
+            
+            // 分隔线
+            androidx.compose.material3.HorizontalDivider(
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+            
+            // 未分组选项
+            DropdownMenuItem(
+                text = { Text("未分组") },
+                onClick = {
+                    onGroupSelected(null)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .background(
+                                color = Color.Gray,
+                                shape = CircleShape
+                            )
+                    )
+                }
+            )
+            
+            // 各个分组选项
+            groups.forEach { group ->
+                DropdownMenuItem(
+                    text = { Text(group.name) },
+                    onClick = {
+                        onGroupSelected(group.id)
+                        expanded = false
+                    },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .background(
+                                    color = try {
+                                        Color(android.graphics.Color.parseColor(group.color))
+                                    } catch (e: Exception) {
+                                        MaterialTheme.colorScheme.primary
+                                    },
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                )
+            }
+        }
+    }
 }
 

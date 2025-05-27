@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,18 +27,25 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.snapshots.SnapshotStateMap
@@ -49,7 +57,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.contacts.Contact
 import com.example.contacts.ContactDetails
+import com.example.contacts.ContactGroup
 import com.example.contacts.parseDetails
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.HorizontalDivider
 
 // 联系人表单状态数据类
 @SuppressLint("MutableCollectionMutableState")
@@ -92,52 +104,31 @@ class CollapsibleState {
 // 从Contact对象初始化表单状态
 fun initializeFormStateFromContact(contact: Contact): ContactFormState {
     val details = parseDetails(contact.details)
-    val formState = ContactFormState()
-
-    formState.name = contact.name
-    formState.source = contact.source
-    formState.birthYear = contact.birthYear?.toString() ?: ""
-    formState.birthMonth = contact.birthMonth?.toString() ?: ""
-    formState.birthDay = contact.birthDay?.toString() ?: ""
-    formState.realName = contact.realName ?: ""
-
-    // 清空并重新填充详细信息
-    formState.nicknames.clear()
-    details?.nicknames?.forEach { formState.nicknames.add(it) }
-
-    formState.contacts.clear()
-    formState.contacts.putAll(
-        mutableMapOf(
-            "微信" to "",
-            "QQ" to "",
-            "手机号" to (contact.phone ?: "")
-        )
-    )
-    details?.contacts?.forEach { (key, value) ->
-        formState.contacts[key] = value
+    
+    return ContactFormState().apply {
+        name = contact.name
+        source = contact.source
+        birthYear = contact.birthYear?.toString() ?: ""
+        birthMonth = contact.birthMonth?.toString() ?: ""
+        birthDay = contact.birthDay?.toString() ?: ""
+        realName = contact.realName ?: ""
+        
+        // 初始化详细信息
+        details?.let { d ->
+            d.nicknames?.let { nicknames.addAll(it) }
+            d.contacts?.let { contacts.putAll(it) }
+            d.hobbies?.let { hobbies.addAll(it) }
+            d.dislikes?.let { dislikes.addAll(it) }
+            d.traits?.let { traits.addAll(it) }
+            d.addresses?.let { addresses.addAll(it) }
+            d.notes?.let { notes.addAll(it) }
+            d.custom?.let { custom ->
+                custom.forEach { (key, values) ->
+                    customFields[key] = values.toMutableList()
+                }
+            }
+        }
     }
-
-    formState.hobbies.clear()
-    details?.hobbies?.forEach { formState.hobbies.add(it) }
-
-    formState.dislikes.clear()
-    details?.dislikes?.forEach { formState.dislikes.add(it) }
-
-    formState.traits.clear()
-    details?.traits?.forEach { formState.traits.add(it) }
-
-    formState.addresses.clear()
-    details?.addresses?.forEach { formState.addresses.add(it) }
-
-    formState.notes.clear()
-    details?.notes?.forEach { formState.notes.add(it) }
-
-    formState.customFields.clear()
-    details?.custom?.forEach { (key, value) ->
-        formState.customFields[key] = value.toMutableList()
-    }
-
-    return formState
 }
 
 // 从表单状态创建ContactDetails
@@ -158,6 +149,10 @@ fun createContactDetailsFromFormState(formState: ContactFormState): ContactDetai
 fun ContactFormContent(
     formState: ContactFormState,
     collapsibleState: CollapsibleState,
+    groups: List<ContactGroup> = emptyList(),
+    selectedGroupId: Long? = null,
+    onGroupSelected: (Long?) -> Unit = {},
+    onGroupAdded: ((ContactGroup) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -181,6 +176,10 @@ fun ContactFormContent(
             onSourceChange = { formState.source = it },
             realName = formState.realName,
             onRealNameChange = { formState.realName = it },
+            groups = groups,
+            selectedGroupId = selectedGroupId,
+            onGroupSelected = onGroupSelected,
+            onGroupAdded = onGroupAdded,
             isExpanded = collapsibleState.isBasicInfoExpanded,
             onToggle = {
                 collapsibleState.isBasicInfoExpanded = !collapsibleState.isBasicInfoExpanded
@@ -370,6 +369,10 @@ private fun BasicInfoCard(
     onSourceChange: (String) -> Unit,
     realName: String,
     onRealNameChange: (String) -> Unit,
+    groups: List<ContactGroup> = emptyList(),
+    selectedGroupId: Long? = null,
+    onGroupSelected: (Long?) -> Unit = {},
+    onGroupAdded: ((ContactGroup) -> Unit)? = null,
     isExpanded: Boolean,
     onToggle: () -> Unit
 ) {
@@ -439,6 +442,14 @@ private fun BasicInfoCard(
                         label = { Text("真实姓名") },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("如果与显示姓名不同") }
+                    )
+
+                    // 分组选择
+                    GroupSelector(
+                        groups = groups,
+                        selectedGroupId = selectedGroupId,
+                        onGroupSelected = onGroupSelected,
+                        onGroupAdded = onGroupAdded
                     )
                 }
             }
@@ -537,5 +548,234 @@ private fun BirthdayCard(
                 }
             }
         }
+    }
+}
+
+// 分组选择器组件 - 支持新增分组
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun GroupSelector(
+    groups: List<ContactGroup>,
+    selectedGroupId: Long?,
+    onGroupSelected: (Long?) -> Unit,
+    onGroupAdded: ((ContactGroup) -> Unit)? = null // 新增分组回调
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var showAddGroupDialog by remember { mutableStateOf(false) }
+    var newGroupName by remember { mutableStateOf("") }
+    var newGroupColor by remember { mutableStateOf("#2196F3") }
+    
+    val selectedGroup = groups.find { it.id == selectedGroupId }
+    
+    // 预定义的颜色选项
+    val colorOptions = listOf(
+        "#F44336", "#E91E63", "#9C27B0", "#673AB7",
+        "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
+        "#009688", "#4CAF50", "#8BC34A", "#CDDC39",
+        "#FFEB3B", "#FFC107", "#FF9800", "#FF5722",
+        "#795548", "#9E9E9E", "#607D8B"
+    )
+    
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = !expanded }
+    ) {
+        OutlinedTextField(
+            value = selectedGroup?.name ?: "未分组",
+            onValueChange = { },
+            readOnly = true,
+            label = { Text("分组") },
+            trailingIcon = {
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor()
+        )
+        
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            // 新增分组选项
+            DropdownMenuItem(
+                text = { 
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "新增分组",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "新增分组",
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                },
+                onClick = {
+                    expanded = false
+                    showAddGroupDialog = true
+                }
+            )
+            
+            // 分隔线
+            androidx.compose.material3.HorizontalDivider(
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+            
+            // 未分组选项
+            DropdownMenuItem(
+                text = { Text("未分组") },
+                onClick = {
+                    onGroupSelected(null)
+                    expanded = false
+                },
+                leadingIcon = {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .background(
+                                color = Color.Gray,
+                                shape = CircleShape
+                            )
+                    )
+                }
+            )
+            
+            // 各个分组选项
+            groups.forEach { group ->
+                DropdownMenuItem(
+                    text = { Text(group.name) },
+                    onClick = {
+                        onGroupSelected(group.id)
+                        expanded = false
+                    },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .background(
+                                    color = try {
+                                        Color(android.graphics.Color.parseColor(group.color))
+                                    } catch (e: Exception) {
+                                        MaterialTheme.colorScheme.primary
+                                    },
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                )
+            }
+        }
+    }
+    
+    // 新增分组对话框
+    if (showAddGroupDialog) {
+        AlertDialog(
+            onDismissRequest = { 
+                showAddGroupDialog = false
+                newGroupName = ""
+                newGroupColor = "#2196F3"
+            },
+            title = { Text("新增分组") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // 分组名称输入
+                    OutlinedTextField(
+                        value = newGroupName,
+                        onValueChange = { newGroupName = it },
+                        label = { Text("分组名称") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        isError = newGroupName.isBlank(),
+                        supportingText = if (newGroupName.isBlank()) {
+                            { Text("分组名称不能为空") }
+                        } else null
+                    )
+                    
+                    // 颜色选择
+                    Text(
+                        text = "选择颜色",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    
+                    // 颜色选择网格
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        colorOptions.forEach { color ->
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(
+                                        color = Color(android.graphics.Color.parseColor(color)),
+                                        shape = CircleShape
+                                    )
+                                    .border(
+                                        width = if (newGroupColor == color) 3.dp else 1.dp,
+                                        color = if (newGroupColor == color) 
+                                            MaterialTheme.colorScheme.primary 
+                                        else 
+                                            MaterialTheme.colorScheme.outline,
+                                        shape = CircleShape
+                                    )
+                                    .clickable {
+                                        newGroupColor = color
+                                    }
+                            ) {
+                                if (newGroupColor == color) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "已选择",
+                                        tint = Color.White,
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .align(Alignment.Center)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (newGroupName.isNotBlank()) {
+                            val newGroup = ContactGroup(
+                                name = newGroupName.trim(),
+                                color = newGroupColor
+                            )
+                            onGroupAdded?.invoke(newGroup)
+                            showAddGroupDialog = false
+                            newGroupName = ""
+                            newGroupColor = "#2196F3"
+                        }
+                    },
+                    enabled = newGroupName.isNotBlank()
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { 
+                        showAddGroupDialog = false
+                        newGroupName = ""
+                        newGroupColor = "#2196F3"
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
     }
 } 
