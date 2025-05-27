@@ -17,8 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.room.Room
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.contacts.data.ContactDatabase
 import com.example.contacts.ui.AddContactScreen
 import com.example.contacts.ui.ContactEditScreen
 import com.example.contacts.ui.ContactInfoScreen

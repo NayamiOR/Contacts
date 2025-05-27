@@ -51,13 +51,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
-import com.example.contacts.Contact
-import com.example.contacts.ContactDatabase
-import com.example.contacts.ContactGroup
+import com.example.contacts.data.entities.Contact
+import com.example.contacts.data.ContactDatabase
+import com.example.contacts.data.entities.ContactGroup
 import com.example.contacts.PinyinUtils
 import com.example.contacts.R
 import com.example.contacts.ui.components.AlphabetSortedContactsPage
-import com.example.contacts.ui.components.CollapsibleGroupSectionHeader
 import com.example.contacts.ui.components.GroupedContactsPage
 import kotlinx.coroutines.launch
 

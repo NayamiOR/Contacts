@@ -21,7 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.contacts.Contact
+import com.example.contacts.data.entities.Contact
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 

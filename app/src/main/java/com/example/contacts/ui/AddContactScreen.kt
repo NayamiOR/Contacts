@@ -64,10 +64,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
-import com.example.contacts.Contact
-import com.example.contacts.ContactDatabase
-import com.example.contacts.ContactDetails
-import com.example.contacts.ContactGroup
+import com.example.contacts.data.ContactDatabase
+import com.example.contacts.data.entities.Contact
+import com.example.contacts.data.entities.ContactDetails
+import com.example.contacts.data.entities.ContactGroup
 import com.example.contacts.ui.components.CollapsibleContactCard
 import com.example.contacts.ui.components.CollapsibleDetailCard
 import com.google.gson.Gson

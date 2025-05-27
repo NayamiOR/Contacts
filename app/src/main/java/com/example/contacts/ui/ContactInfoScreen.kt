@@ -61,9 +61,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.room.Room
-import com.example.contacts.Contact
-import com.example.contacts.ContactDatabase
-import com.example.contacts.parseDetails
+import com.example.contacts.data.entities.Contact
+import com.example.contacts.data.ContactDatabase
+import com.example.contacts.data.utils.parseDetails
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)

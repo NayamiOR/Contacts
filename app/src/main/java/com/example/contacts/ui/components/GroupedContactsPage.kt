@@ -18,8 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.example.contacts.Contact
-import com.example.contacts.ContactGroup
+import com.example.contacts.data.entities.Contact
+import com.example.contacts.data.entities.ContactGroup
 
 // 按分组显示的联系人页面 - 支持折叠
 @Composable

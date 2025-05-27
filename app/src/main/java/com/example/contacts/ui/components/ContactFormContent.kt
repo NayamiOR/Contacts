@@ -55,13 +55,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.example.contacts.Contact
-import com.example.contacts.ContactDetails
-import com.example.contacts.ContactGroup
-import com.example.contacts.parseDetails
-import androidx.compose.foundation.layout.FlowRow
+import com.example.contacts.data.entities.Contact
+import com.example.contacts.data.entities.ContactDetails
+import com.example.contacts.data.entities.ContactGroup
+import com.example.contacts.data.utils.parseDetails
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.HorizontalDivider
 
 // 联系人表单状态数据类
 @SuppressLint("MutableCollectionMutableState")
